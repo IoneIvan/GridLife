@@ -32,18 +32,17 @@ __global__ void initializeCellsKernel(Cell* cells, int width, int height, curand
         int idx = y * width + x;
         curandState localState = randStates[idx]; // Fetch pre-initialized state
 
-        cells[idx].alive = curand(&localState) % 20 == 0 ? 1 : 0; // Randomly set alive or dead      
         cells[idx].energy = 0;// Randomly set energy
-        cells[idx].mutation = curand(&localState) % 1000;// Randomly set energy
-        if (cells[idx].alive)
-        {
-            cells[idx].energy = curand(&localState) % REP_ENERGY / 2;// Randomly set energy
-        }
-        cells[idx].age = 0; // Initial age
         cells[idx].activeGene = 0; // Initial age
-        for (int g = 0; g < NUM_GENES; g++) {
+        cells[idx].mutation = curand(&localState) % 1000;// Randomly set energy
+        int isAlive = curand(&localState) % 20 == 0 ? 1 : 0; // Randomly set alive or dead      
+        
+        if (isAlive)
+            cells[idx].energy = curand(&localState) % REP_ENERGY / 2;// Randomly set energy
+        
+        for (int g = 0; g < NUM_GENES; g++) 
             cells[idx].genes[g] = curand(&localState) % GENES; // Random genes
-        }
+        
 
         randStates[idx] = localState; // Save state back
     }
@@ -71,11 +70,6 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
 
         //Alive Cell
         if (energy > 0) {
-            //Copy Genes
-            //for (int i = 0; i < NUM_GENES; ++i)
-            //    next[idx].genes[i] = current[idx].genes[i];
-            //Copy Mutation
-            next[idx].mutation = current[idx].mutation;
             
             //Calculate Neibhors
             int neighborEnergy = 0;
@@ -159,7 +153,6 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
             // remove energy for stayin alive
             energy -= 1;
 
-
             //Check if the energy is in the proper range
             if (energy <= 0 || energy>=2* REP_ENERGY)
                 energy = 0;
@@ -189,11 +182,12 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
             //Process Reproduction
             if (parentAlive > 0)
             {
+
                 //Copy energy of parents
                 energy = parentEnergy / parentAlive / 2 - 1;
                 energy = energy > 0 ? energy : 0;
                 //Copy Genes
-                    int j = parents[curand(&localState) % parentAlive];
+                int j = parents[curand(&localState) % parentAlive];
                 for (int i = 0; i < NUM_GENES; ++i)
                 {
                     int neighborX = x + neighborOffsets[j][0];
@@ -202,11 +196,13 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                     next[idx].genes[i] = current[neighborY * width + neighborX].genes[i];
                     current[idx].genes[i] = current[neighborY * width + neighborX].genes[i];
                     next[idx].mutation = current[neighborY * width + neighborX].mutation;
+                    current[idx].mutation = current[neighborY * width + neighborX].mutation;
                 }
                 //Mutation
                 if (curand(&localState) % 40 == 0)
                 {
                     next[idx].mutation = curand(&localState) % 1000;
+                    current[idx].mutation = next[idx].mutation;
                     int gn = curand(&localState) % NUM_GENES;
                     int gv = curand(&localState) % GENES;
                     next[idx].genes[gn] = gv;
@@ -223,27 +219,6 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
     }
 }
 
-void initializeCellular(Cell* current) {
-    // Initialize the grid with a simple pattern and random genes
-    srand(time(NULL));
-    for (int y = 0; y < HEIGHT; y++) {
-        for (int x = 0; x < WIDTH; x++) {
-            int idx = y * WIDTH + x;
-            current[idx].alive = 0; // Dead cell
-            current[idx].age = 0;  // Initial age
-            for (int g = 0; g < NUM_GENES; g++) {
-                current[idx].genes[g] = rand() % 10; // Random genes
-            }
-        }
-    }
-
-    // A glider pattern
-    current[1 * WIDTH + 0].alive = 1;
-    current[2 * WIDTH + 1].alive = 1;
-    current[0 * WIDTH + 2].alive = 1;
-    current[1 * WIDTH + 2].alive = 1;
-    current[2 * WIDTH + 2].alive = 1;
-}
 
 int main() {
     if (false)
@@ -270,7 +245,7 @@ int main() {
 
     Cell* current = (Cell*)malloc(WIDTH * HEIGHT * sizeof(Cell));
 
-    initializeCellular(current);
+    srand(time(NULL));
 
     Cell* dev_current = 0;
     Cell* dev_next = 0;
@@ -288,20 +263,7 @@ int main() {
         fprintf(stderr, "cudaMalloc failed!");
         return 1;
     }
-
-
-    // Copy initial grid to GPU
-    cudaStatus = cudaMemcpy(dev_current, current, WIDTH * HEIGHT * sizeof(Cell), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        return 1;
-    }
-    cudaStatus = cudaMemcpy(dev_next, current, WIDTH * HEIGHT * sizeof(Cell), cudaMemcpyHostToDevice);
-    if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaMemcpy failed!");
-        return 1;
-    }
-   
+  
 
     // Initialize cells on the GPU
     dim3 threadsPerBlock(16, 16);
@@ -315,6 +277,7 @@ int main() {
     // Use a seed for random number generation
     initializeCellsKernel << <numBlocks, threadsPerBlock >> > (dev_current, WIDTH, HEIGHT, d_randStates);
     cudaDeviceSynchronize();
+    cudaMemcpy(dev_next, dev_current, WIDTH * HEIGHT * sizeof(Cell), cudaMemcpyDeviceToDevice);
 
     // Mouse state variables
     double mouseX, mouseY;
