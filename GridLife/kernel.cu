@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <algorithm>
+#include <chrono>
 
 #include "Window.h"
 #include "Constants.h"
@@ -56,6 +57,7 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
        {-1, 0}, // Left
        {1, 0}   // Right
     };
+
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -64,36 +66,24 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
         int idx = y * width + x;
         curandState localState = randStates[idx]; // Fetch pre-initialized state
 
-        int aliveParents = 0;
-        int aliveInstantNeighbors = 0;
+        //Copy Energy
         int energy = current[idx].energy;
-        int parentsEnergy = 0;
 
-        int parents[4];
-
-       
+        //Alive Cell
         if (energy > 0) {
-            for (int i = 0; i < NUM_GENES; ++i)
-                next[idx].genes[i] = current[idx].genes[i];
+            //Copy Genes
+            //for (int i = 0; i < NUM_GENES; ++i)
+            //    next[idx].genes[i] = current[idx].genes[i];
+            //Copy Mutation
             next[idx].mutation = current[idx].mutation;
-            for (int i = 0; i < 4; i++) {
-                int neighborX = x + neighborOffsets[i][0] * 2;
-                int neighborY = y + neighborOffsets[i][1] * 2;
-
-                // Check if the neighbor is within bounds and alive
-                if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
-                    if (current[neighborY * width + neighborX].energy > 0) {
-                        parents[aliveParents] = i;
-                        if (current[neighborY * width + neighborX].energy > REP_ENERGY)
-                            aliveParents++;
-                        parentsEnergy += current[neighborY * width + neighborX].energy;
-                    }
-                }
-            }
-
-            int neighbors_energy = 0;
-            int acumulateNeigbhorEnergy = 0;
+            
+            //Calculate Neibhors
+            int neighborEnergy = 0;
+            int neighborAlive = 0;
             int mutants = 0;
+            int sharedEnergy = 0;
+            int damageEnergy = 0;
+
             for (int i = 0; i < 4; i++) {
                 int neighborX = x + neighborOffsets[i][0];
                 int neighborY = y + neighborOffsets[i][1];
@@ -101,57 +91,87 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                 // Check if the neighbor is within bounds and alive
                 if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
                     if (current[neighborY * width + neighborX].energy > 0) {
-                        aliveInstantNeighbors++;
-                        neighbors_energy += current[neighborY * width + neighborX].energy;
+
+                        neighborAlive++;
+                        neighborEnergy += current[neighborY * width + neighborX].energy;
+                        
+                        //Neighbor Shared Energy
                         if (current[neighborY * width + neighborX].genes[current[neighborY * width + neighborX].activeGene] == 2)
-                            acumulateNeigbhorEnergy += current[neighborY * width + neighborX].energy / 4;
+                            sharedEnergy += current[neighborY * width + neighborX].energy / 4;
+                        //Neighbor Attacked
                         if (current[neighborY * width + neighborX].genes[current[neighborY * width + neighborX].activeGene] == 4)
-                            acumulateNeigbhorEnergy -= current[neighborY * width + neighborX].energy;
+                            damageEnergy -= current[neighborY * width + neighborX].energy;
+                        //Mutant Detected
                         if (current[neighborY * width + neighborX].mutation != current[idx].mutation)
                             mutants++;
                     }
                 }
             }
+            //Remove Energy for reproduction
+            if (neighborAlive > 0 && energy >= REP_ENERGY)
+                energy = energy / neighborAlive;
 
-            if (aliveInstantNeighbors > 0 && energy >= REP_ENERGY)
-                energy = energy / aliveInstantNeighbors;
+            //Processed shared and damged energy
+            //energy += sharedEnergy;
+            energy -= damageEnergy;
 
-            energy += acumulateNeigbhorEnergy;
+            int newActiveGene = 0;
 
-            next[idx].activeGene  = (current[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
-
-            
-            if (current[idx].genes[current[idx].activeGene] == 0)
+            //Update Gene
+            next[idx].activeGene = (current[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
+            //Process Cells functions
+            switch (current[idx].genes[current[idx].activeGene])
             {
+            case 0:
                 energy += current[idx].genes[next[idx].activeGene];
-                next[idx].activeGene = (next[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
-            }
-            if (current[idx].genes[current[idx].activeGene] == 1)
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+
+                break;
+            case 1:
                 energy -= 1;
-            if (current[idx].genes[current[idx].activeGene] == 2)
-                energy /= aliveInstantNeighbors - 1;
-            if (current[idx].genes[current[idx].activeGene] == 3)
-            {
-                next[idx].activeGene = (next[idx].activeGene + aliveInstantNeighbors + NUM_GENES + 1) % NUM_GENES;
-            } 
-            if (current[idx].genes[current[idx].activeGene] == 4)
-            {
+                break;
+            case 2:
+                if(neighborAlive > 0)
+                //energy /= neighborAlive;
+                //energy -= 1;
+                break;
+            case 3:
+                newActiveGene = (next[idx].activeGene + NUM_GENES + neighborAlive) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            case 4:
                 //energy -= neighbors_energy/aliveInstantNeighbors;
+                break;
+            case 5:
+                newActiveGene = (next[idx].activeGene + NUM_GENES + mutants) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            case 6:
+                newActiveGene = (next[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
             }
-            if (current[idx].genes[current[idx].activeGene] == 5)
-            {
-                next[idx].activeGene = (next[idx].activeGene + mutants + NUM_GENES + 1) % NUM_GENES;
-            }
+
+            //random chance to die
             if (curand(&localState) % 1000 == 0)
                 energy = 0;
+
+            // remove energy for stayin alive
             energy -= 1;
 
+
+            //Check if the energy is in the proper range
             if (energy <= 0 || energy>=2* REP_ENERGY)
                 energy = 0;
 
         }
+        //Empty Cell
         else {
-            
+            int parents[4];
+            int parentAlive = 0;
+            int parentEnergy = 0;
+
+            //Calculate Parents
             for (int i = 0; i < 4; i++) {
                 int neighborX = x + neighborOffsets[i][0];
                 int neighborY = y + neighborOffsets[i][1];
@@ -159,59 +179,42 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                 // Check if the neighbor is within bounds and alive
                 if (neighborX >= 0 && neighborX < width && neighborY >= 0 && neighborY < height) {
                     if (current[neighborY * width + neighborX].energy > REP_ENERGY) {
-                        parents[aliveParents] = i;
-                            aliveParents++;
-                        parentsEnergy += current[neighborY * width + neighborX].energy;
+                        parents[parentAlive] = i;
+                        parentAlive++;
+                        parentEnergy += current[neighborY * width + neighborX].energy;
                     }
                 }
             }
-            if (aliveParents >= 1)
+            
+            //Process Reproduction
+            if (parentAlive > 0)
             {
-                energy = parentsEnergy / aliveParents / 2 - 1;
+                //Copy energy of parents
+                energy = parentEnergy / parentAlive / 2 - 1;
                 energy = energy > 0 ? energy : 0;
-
-                next[idx].activeGene = 0;
-
-                for (int i = 0; i < 4 - 1; ++i) {
-                    for (int j = 0; j < 4 - i - 1; ++j) {
-                        int neighborX = x + neighborOffsets[j][0];
-                        int neighborY = y + neighborOffsets[j][1];
-                        int neighborX2 = x + neighborOffsets[j][0];
-                        int neighborY2 = y + neighborOffsets[j][1];
-                        if (current[neighborY * width + neighborX].energy < current[neighborY2 * width + neighborX2].energy) { // Sort in descending order
-                            // Swap arr[j] and arr[j + 1]
-                            int temp = parents[j];
-                            parents[j] = parents[j + 1];
-                            parents[j + 1] = temp;
-                        }
-                    }
-                }
-                    int j = parents[curand(&localState) %  aliveParents];
+                //Copy Genes
+                    int j = parents[curand(&localState) % parentAlive];
                 for (int i = 0; i < NUM_GENES; ++i)
                 {
-
-                    int randomIndex = curand(&localState) % 10;
-                    if (randomIndex <= 3)
-                        randomIndex = 0;
-                    else if (randomIndex <= 6)
-                        randomIndex = 1;
-                    else if (randomIndex <= 8)
-                        randomIndex = 2;
-                    else
-                        randomIndex = 3;
-
                     int neighborX = x + neighborOffsets[j][0];
                     int neighborY = y + neighborOffsets[j][1];
 
                     next[idx].genes[i] = current[neighborY * width + neighborX].genes[i];
+                    current[idx].genes[i] = current[neighborY * width + neighborX].genes[i];
                     next[idx].mutation = current[neighborY * width + neighborX].mutation;
                 }
+                //Mutation
                 if (curand(&localState) % 40 == 0)
                 {
                     next[idx].mutation = curand(&localState) % 1000;
-                    next[idx].genes[curand(&localState) % NUM_GENES] = curand(&localState) % GENES;
+                    int gn = curand(&localState) % NUM_GENES;
+                    int gv = curand(&localState) % GENES;
+                    next[idx].genes[gn] = gv;
+                    current[idx].genes[gn] = gv;
                 }
 
+                //Set ActiveGene to 0
+                next[idx].activeGene = 0;
             }
         }
         next[idx].energy = energy;
@@ -243,10 +246,29 @@ void initializeCellular(Cell* current) {
 }
 
 int main() {
-    Window window(800, 800, "Game of Life");
+    if (false)
+    {
+        // Prompt the user to enter the width
+        std::cout << "Enter the width: ";
+        std::cin >> WIDTH;
+
+        // Prompt the user to enter the height
+        std::cout << "Enter the height: ";
+        std::cin >> HEIGHT;
+
+        // Optionally, you can print the values to confirm
+        std::cout << "Width set to: " << WIDTH << std::endl;
+        std::cout << "Height set to: " << HEIGHT << std::endl;
+    }
+    else
+    {
+        WIDTH = 500;
+        HEIGHT = 500;
+    }
+    int cellSize = 3;
+    Window window(WIDTH * cellSize, HEIGHT * cellSize, "Game of Life");
 
     Cell* current = (Cell*)malloc(WIDTH * HEIGHT * sizeof(Cell));
-    Cell* next = (Cell*)malloc(WIDTH * HEIGHT * sizeof(Cell));
 
     initializeCellular(current);
 
@@ -274,7 +296,11 @@ int main() {
         fprintf(stderr, "cudaMemcpy failed!");
         return 1;
     }
-
+    cudaStatus = cudaMemcpy(dev_next, current, WIDTH * HEIGHT * sizeof(Cell), cudaMemcpyHostToDevice);
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "cudaMemcpy failed!");
+        return 1;
+    }
    
 
     // Initialize cells on the GPU
@@ -294,7 +320,11 @@ int main() {
     double mouseX, mouseY;
     int mouseButtonState;
 
-    int a = 0;
+    int a = 200;
+    bool isUpdateFrame = true;
+    auto lastTime = std::chrono::high_resolution_clock::now(); // Start time
+    int frameCount = 0; // Frame counter
+
     // Main loop
     while (!window.shouldClose()) {
 
@@ -338,6 +368,20 @@ int main() {
         }
         // Check keyboard events
         {
+            if (glfwGetKey(window.window, GLFW_KEY_O) == GLFW_PRESS) {
+                a = 1; // Increase a by 1 when 'A' is pressed
+                printf("Variable set to: %d\n", a);
+            }
+            if (glfwGetKey(window.window, GLFW_KEY_I) == GLFW_PRESS) {
+                std::cout << "Enter generation per frame ( currently" << a << ") :";
+                std::cin >> a;
+                if (a <0)
+                {
+                    a = -a;
+                    isUpdateFrame = !isUpdateFrame;
+                }
+                printf("Variable set to: %d\n", a);
+            }
             if (glfwGetKey(window.window, GLFW_KEY_A) == GLFW_PRESS) {
                 a++; // Increase a by 1 when 'A' is pressed
                 printf("Variable a increased to: %d\n", a);
@@ -348,7 +392,13 @@ int main() {
                     a = 0;
                 printf("Variable a decreased to: %d\n", a);
             }
+            if (glfwGetKey(window.window, GLFW_KEY_R) == GLFW_PRESS) {
+                initializeCellsKernel << <numBlocks, threadsPerBlock >> > (dev_current, WIDTH, HEIGHT, d_randStates);
+                cudaDeviceSynchronize();
+                printf("Reset\n");
+            }
         }
+
         // Run the simulation for a number of generations
         for (int generation = 0; generation < a; generation++) {
             dim3 threadsPerBlock(16, 16);
@@ -366,20 +416,38 @@ int main() {
             dev_next = temp;
         }
 
-        // Copy the current generation back to the host
+       
+
+        if (isUpdateFrame)
+        {
+            // Copy the current generation back to the host
             cudaMemcpy(current, dev_current, WIDTH * HEIGHT * sizeof(Cell), cudaMemcpyDeviceToHost);
+            window.renderGrid(current);
+            window.swapBuffers();
 
+        }
+            window.pollEvents();
 
-        window.renderGrid(current);
-        window.swapBuffers();
-        window.pollEvents();
+        // Frame rate calculation
+        frameCount+= a;
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = currentTime - lastTime;
+
+        // Calculate time per frame
+        std::chrono::duration<double> frameTime = currentTime - lastTime; // Time taken for the current frame
+
+        if (elapsed.count() >= 1.0) { // If one second has passed
+            std::cout << "FPS: " << frameCount / elapsed.count() << std::endl; // Display the frame rate
+            std::cout << "Time per frame: " << frameTime.count() << " seconds" << std::endl; // Display time per frame
+            frameCount = 0; // Reset the frame count
+            lastTime = currentTime; // Update the last time
+        }
     }
 
     // Clean up
     cudaFree(dev_current);
     cudaFree(dev_next);
     free(current);
-    free(next);
 
     return 0;
 }

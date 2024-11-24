@@ -1,10 +1,14 @@
 #pragma once
-#define WIDTH 250
-#define HEIGHT 250
 
-#define NUM_GENES 4 // Define the number of genes each cell will have
-#define GENES 10
-#define REP_ENERGY 100
+#define NUM_GENES 16 // Define the number of genes each cell will have
+#define GENES 32
+#define REP_ENERGY 1000
+
+extern int WIDTH;
+extern int HEIGHT;
+int WIDTH = 250;
+int HEIGHT = 250; 
+
 struct Cell {
     int mutation;
     int alive;        // Alive or dead state

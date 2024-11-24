@@ -94,7 +94,7 @@ public:
                     g = grid[idx].mutation / 1000.0f;
                }
                 
-                glColor3f(0, g, b);
+                glColor3f(r, g, b);
                 glVertex2f((float)x, (float)y); // Bottom left
                 glVertex2f((float)(x + 1), (float)y); // Bottom right
                 glVertex2f((float)(x + 1), (float)(y + 1)); // Top right
