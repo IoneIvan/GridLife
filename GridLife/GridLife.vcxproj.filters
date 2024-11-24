@@ -13,6 +13,7 @@
       <Filter>Header</Filter>
     </ClInclude>
     <ClInclude Include="Constants.h" />
+    <ClInclude Include="TextRenderer.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="kernel.cu" />

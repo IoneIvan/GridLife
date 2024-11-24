@@ -134,7 +134,7 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                 next[idx].activeGene = current[idx].genes[newActiveGene];
                 break;
             case 4:
-                //energy -= neighbors_energy/aliveInstantNeighbors;
+                //energy += neighborEnergy / neighborAlive / 2;
                 break;
             case 5:
                 newActiveGene = (next[idx].activeGene + NUM_GENES + mutants) % NUM_GENES;
@@ -237,8 +237,8 @@ int main() {
     }
     else
     {
-        WIDTH = 500;
-        HEIGHT = 500;
+        WIDTH = 200;
+        HEIGHT = 200;
     }
     int cellSize = 3;
     Window window(WIDTH * cellSize, HEIGHT * cellSize, "Game of Life");
@@ -288,6 +288,7 @@ int main() {
     auto lastTime = std::chrono::high_resolution_clock::now(); // Start time
     int frameCount = 0; // Frame counter
 
+    int generationCounter=0;
     // Main loop
     while (!window.shouldClose()) {
 
@@ -296,7 +297,7 @@ int main() {
             glfwGetCursorPos(window.window, &mouseX, &mouseY); // Get mouse position
             mouseButtonState = glfwGetMouseButton(window.window, GLFW_MOUSE_BUTTON_LEFT); // Left mouse button state
 
-            if (mouseButtonState == GLFW_PRESS) {
+            if (mouseButtonState == GLFW_PRESS && isUpdateFrame) {
                 // Convert mouse position to grid coordinates
                 int gridX = (int)(mouseX / window.cellWidth);
                 int gridY = HEIGHT - (int)(mouseY / window.cellHeight); // Flip Y axis since OpenGL has the origin at the bottom left
@@ -342,6 +343,12 @@ int main() {
                 {
                     a = -a;
                     isUpdateFrame = !isUpdateFrame;
+                    window.setGeneration(generationCounter);
+                    window.showSideBar();
+                }
+                else
+                {
+                    window.hideSideBar();
                 }
                 printf("Variable set to: %d\n", a);
             }
@@ -355,7 +362,8 @@ int main() {
                     a = 0;
                 printf("Variable a decreased to: %d\n", a);
             }
-            if (glfwGetKey(window.window, GLFW_KEY_R) == GLFW_PRESS) {
+
+            if (glfwGetKey(window.window, GLFW_KEY_R) == GLFW_PRESS ) {
                 initializeCellsKernel << <numBlocks, threadsPerBlock >> > (dev_current, WIDTH, HEIGHT, d_randStates);
                 cudaDeviceSynchronize();
                 printf("Reset\n");
@@ -379,13 +387,20 @@ int main() {
             dev_next = temp;
         }
 
-       
+        generationCounter += a;
 
         if (isUpdateFrame)
         {
             // Copy the current generation back to the host
             cudaMemcpy(current, dev_current, WIDTH * HEIGHT * sizeof(Cell), cudaMemcpyDeviceToHost);
             window.renderGrid(current);
+            window.swapBuffers();
+
+        }
+        else
+        {
+            window.setGeneration(generationCounter);
+            window.renderSidebar();
             window.swapBuffers();
 
         }
