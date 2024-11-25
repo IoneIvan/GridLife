@@ -143,8 +143,9 @@ public:
                 {
                     //g = grid[idx].mutation / 3000.0;
 
-                    b = grid[idx].genes[0] / float(GENES);
-                    g = grid[idx].mutation / 1000.0f;
+                    b = grid[idx].genes[NUM_GENES-1] / float(GENES);
+                    //r = grid[idx].genes[NUM_GENES/2] / float(GENES);
+                    g = grid[idx].mutation / 100000.0f;
                }
                 
                 glColor3f(r, g, b);

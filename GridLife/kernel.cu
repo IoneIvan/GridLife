@@ -32,6 +32,7 @@ __global__ void initializeCellsKernel(Cell* cells, int width, int height, curand
         int idx = y * width + x;
         curandState localState = randStates[idx]; // Fetch pre-initialized state
 
+        cells[idx].rotation = curand(&localState) % 4;// Randomly set energy
         cells[idx].energy = 0;// Randomly set energy
         cells[idx].activeGene = 0; // Initial age
         cells[idx].mutation = curand(&localState) % 1000;// Randomly set energy
@@ -76,6 +77,7 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
             int neighborAlive = 0;
             int mutants = 0;
             int sharedEnergy = 0;
+            int attackEnergy = 0;
             int damageEnergy = 0;
 
             for (int i = 0; i < 4; i++) {
@@ -91,10 +93,23 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                         
                         //Neighbor Shared Energy
                         if (current[neighborY * width + neighborX].genes[current[neighborY * width + neighborX].activeGene] == 2)
-                            sharedEnergy += current[neighborY * width + neighborX].energy / 4;
+                            sharedEnergy += current[neighborY * width + neighborX].energy / 5;
+                        //Gain Energy From attack
+                        if (current[neighborY * width + neighborX].energy)
+                            attackEnergy -= current[neighborY * width + neighborX].energy;
+                        else
+                            attackEnergy += current[neighborY * width + neighborX].energy;
                         //Neighbor Attacked
                         if (current[neighborY * width + neighborX].genes[current[neighborY * width + neighborX].activeGene] == 4)
-                            damageEnergy -= current[neighborY * width + neighborX].energy;
+                            damageEnergy += current[neighborY * width + neighborX].energy;
+                        if (current[neighborY * width + neighborX].genes[current[neighborY * width + neighborX].activeGene] == 12 &&
+                            neighborOffsets[current[neighborY * width + neighborX].rotation][0] == -neighborOffsets[i][0] && 
+                            neighborOffsets[current[neighborY * width + neighborX].rotation][1] == -neighborOffsets[i][1])
+                            damageEnergy += current[neighborY * width + neighborX].energy;
+                        if (current[neighborY * width + neighborX].genes[current[neighborY * width + neighborX].activeGene] == 13 &&
+                            neighborOffsets[current[neighborY * width + neighborX].rotation][0] == -neighborOffsets[i][0] &&
+                            neighborOffsets[current[neighborY * width + neighborX].rotation][1] == -neighborOffsets[i][1])
+                            sharedEnergy += current[neighborY * width + neighborX].energy / 5;
                         //Mutant Detected
                         if (current[neighborY * width + neighborX].mutation != current[idx].mutation)
                             mutants++;
@@ -106,9 +121,10 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                 energy = energy / neighborAlive;
 
             //Processed shared and damged energy
-            //energy += sharedEnergy;
+            //if(damageEnergy > energy)
             energy -= damageEnergy;
 
+            energy += sharedEnergy;
             int newActiveGene = 0;
 
             //Update Gene
@@ -116,25 +132,24 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
             //Process Cells functions
             switch (current[idx].genes[current[idx].activeGene])
             {
-            case 0:
-                energy += current[idx].genes[next[idx].activeGene];
-                next[idx].activeGene = current[idx].genes[newActiveGene];
+            case 9:
+                energy += REP_ENERGY / 100;
 
                 break;
             case 1:
                 energy -= 1;
                 break;
             case 2:
-                if(neighborAlive > 0)
-                //energy /= neighborAlive;
-                //energy -= 1;
+                if (neighborAlive > 0)
+                    energy /= neighborAlive + 1;
+                energy -= 1;
                 break;
             case 3:
                 newActiveGene = (next[idx].activeGene + NUM_GENES + neighborAlive) % NUM_GENES;
                 next[idx].activeGene = current[idx].genes[newActiveGene];
                 break;
             case 4:
-                //energy += neighborEnergy / neighborAlive / 2;
+                energy += attackEnergy;
                 break;
             case 5:
                 newActiveGene = (next[idx].activeGene + NUM_GENES + mutants) % NUM_GENES;
@@ -144,14 +159,82 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                 newActiveGene = (next[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
                 next[idx].activeGene = current[idx].genes[newActiveGene];
                 break;
+            case 7:
+                newActiveGene = (next[idx].activeGene + NUM_GENES + (NUM_GENES * neighborEnergy) / REP_ENERGY) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            case 8:
+                newActiveGene = (next[idx].activeGene + NUM_GENES + (NUM_GENES * energy) / REP_ENERGY) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            case 10:
+                newActiveGene = (next[idx].activeGene + NUM_GENES + (NUM_GENES * current[idx].rotation) / REP_ENERGY) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            case 11:
+            {
+                int neighborX = x + neighborOffsets[current[idx].rotation][0];
+                int neighborY = y + neighborOffsets[current[idx].rotation][1];
+
+                if (current[neighborY * width + neighborX].mutation == current[idx].mutation)
+                    newActiveGene = (next[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
+                else
+                    newActiveGene = (next[idx].activeGene + NUM_GENES + 2) % NUM_GENES;
+
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            }
+            case 12:
+            {
+                int neighborX = x + neighborOffsets[current[idx].rotation][0];
+                int neighborY = y + neighborOffsets[current[idx].rotation][1];
+
+                if (current[neighborY * width + neighborX].energy < energy)
+                {
+                    energy -= current[neighborY * width + neighborX].energy * 0;
+                    newActiveGene = (next[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
+                }
+                else
+                {
+                    energy += current[neighborY * width + neighborX].energy * 0;
+                    newActiveGene = (next[idx].activeGene + NUM_GENES + 2) % NUM_GENES;
+                }
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            }
+            case 13:
+            {
+                int neighborX = x + neighborOffsets[current[idx].rotation][0];
+                int neighborY = y + neighborOffsets[current[idx].rotation][1];
+
+                energy = energy - energy / 5;
+                newActiveGene = (next[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            }
+            case 14:
+                next[idx].rotation = current[idx].genes[next[idx].activeGene] % 4;
+                newActiveGene = (next[idx].activeGene + NUM_GENES + 1) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            case 15:
+            {
+                int neighborX = x + neighborOffsets[current[idx].rotation][0];
+                int neighborY = y + neighborOffsets[current[idx].rotation][1];
+
+                newActiveGene = (next[idx].activeGene + NUM_GENES + (NUM_GENES * current[neighborY * width + neighborX].energy) / REP_ENERGY) % NUM_GENES;
+                next[idx].activeGene = current[idx].genes[newActiveGene];
+                break;
+            }
             }
 
+
             //random chance to die
-            if (curand(&localState) % 1000 == 0)
+            if (curand(&localState) % 10000 == 0)
                 energy = 0;
 
             // remove energy for stayin alive
-            energy -= 1;
+            energy -= REP_ENERGY / 500;
 
             //Check if the energy is in the proper range
             if (energy <= 0 || energy>=2* REP_ENERGY)
@@ -188,20 +271,23 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
                 energy = energy > 0 ? energy : 0;
                 //Copy Genes
                 int j = parents[curand(&localState) % parentAlive];
+                int neighborX = x + neighborOffsets[j][0];
+                int neighborY = y + neighborOffsets[j][1];
+
+                next[idx].rotation = current[neighborY * width + neighborX].rotation;
+                current[idx].rotation = current[neighborY * width + neighborX].rotation;
+                next[idx].mutation = current[neighborY * width + neighborX].mutation;
+                current[idx].mutation = current[neighborY * width + neighborX].mutation;
+
                 for (int i = 0; i < NUM_GENES; ++i)
                 {
-                    int neighborX = x + neighborOffsets[j][0];
-                    int neighborY = y + neighborOffsets[j][1];
-
                     next[idx].genes[i] = current[neighborY * width + neighborX].genes[i];
                     current[idx].genes[i] = current[neighborY * width + neighborX].genes[i];
-                    next[idx].mutation = current[neighborY * width + neighborX].mutation;
-                    current[idx].mutation = current[neighborY * width + neighborX].mutation;
                 }
                 //Mutation
                 if (curand(&localState) % 40 == 0)
                 {
-                    next[idx].mutation = curand(&localState) % 1000;
+                    next[idx].mutation = curand(&localState) % 100000;
                     current[idx].mutation = next[idx].mutation;
                     int gn = curand(&localState) % NUM_GENES;
                     int gv = curand(&localState) % GENES;
@@ -221,7 +307,7 @@ __global__ void updateKernel(Cell* current, Cell* next, int width, int height, c
 
 
 int main() {
-    if (false)
+    if (true)
     {
         // Prompt the user to enter the width
         std::cout << "Enter the width: ";
@@ -240,7 +326,7 @@ int main() {
         WIDTH = 200;
         HEIGHT = 200;
     }
-    int cellSize = 3;
+    int cellSize = 1;
     Window window(WIDTH * cellSize, HEIGHT * cellSize, "Game of Life");
 
     Cell* current = (Cell*)malloc(WIDTH * HEIGHT * sizeof(Cell));

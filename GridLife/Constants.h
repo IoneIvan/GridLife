@@ -1,7 +1,7 @@
 #pragma once
 
 #define NUM_GENES 8 // Define the number of genes each cell will have
-#define GENES 10
+#define GENES 32
 #define REP_ENERGY 1000
 
 extern int WIDTH;
@@ -10,6 +10,7 @@ int WIDTH = 250;
 int HEIGHT = 250; 
 
 struct Cell {
+    uint8_t rotation;
     int mutation;
     int energy;
     int activeGene;
