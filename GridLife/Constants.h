@@ -4,6 +4,7 @@
 #define GENES 10
 #define REP_ENERGY 1000
 
+
 extern int WIDTH;
 extern int HEIGHT;
 int WIDTH = 250;

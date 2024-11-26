@@ -3,6 +3,10 @@
 #include <string>     // For std::string
 #include <GL/glew.h>  // For OpenGL functions
 #include <iostream>
+
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
 class TextRenderer {
     GLuint base; // Display list base for the font
 
@@ -10,7 +14,7 @@ public:
     TextRenderer() : base(0) {}
 
     // Initialize the font with the current device context
-    void initFont(HDC hdc) {
+    void initFont(HDC hdc, int fontSize) {
         base = glGenLists(96); // Reserve 96 display lists (ASCII range 32-127)
         if (base == 0) {
             std::cout << "Failed to create font display lists.";
@@ -18,7 +22,7 @@ public:
 
         // Create a font and map it to OpenGL display lists
         HFONT font = CreateFont(
-            -24, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, ANSI_CHARSET,
+            -fontSize, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, ANSI_CHARSET,
             OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, FF_DONTCARE | DEFAULT_PITCH,
             "Courier New" // Change font name as needed
         );

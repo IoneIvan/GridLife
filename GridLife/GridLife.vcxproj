@@ -97,9 +97,18 @@
     <CudaCompile Include="kernel.cu" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Color.h" />
     <ClInclude Include="Constants.h" />
+    <ClInclude Include="Input.h" />
     <ClInclude Include="TextRenderer.h" />
+    <ClInclude Include="UIComponent.h" />
+    <ClInclude Include="UIRect.h" />
+    <ClInclude Include="UIRenderer.h" />
+    <ClInclude Include="Vector2.h" />
     <ClInclude Include="Window.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Input.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -12,10 +12,29 @@
     <ClInclude Include="Window.h">
       <Filter>Header</Filter>
     </ClInclude>
-    <ClInclude Include="Constants.h" />
-    <ClInclude Include="TextRenderer.h" />
+    <ClInclude Include="Input.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Constants.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="TextRenderer.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="UIRect.h">
+      <Filter>Header</Filter>
+    </ClInclude>
+    <ClInclude Include="Vector2.h" />
+    <ClInclude Include="UIRenderer.h" />
+    <ClInclude Include="UIComponent.h" />
+    <ClInclude Include="Color.h">
+      <Filter>Header</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="kernel.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Input.cpp" />
   </ItemGroup>
 </Project>

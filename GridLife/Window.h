@@ -9,15 +9,19 @@
 #include <random>
 #include <functional>  // For std::hash
 
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
 
 #include "Constants.h"
-#include "TextRenderer.h"
+#include "UIComponent.h"
+
 class Window {
+    UIComponent windowUI;
+    UIComponent plane;
+    UIComponent sideBar;
+    UIComponent gameCanvas;
+    UIComponent button;
+
     const float SIDEBAR_WIDTH = 100.0f; // Sidebar width in screen units
     const float BUTTON_HEIGHT = 20.0f;  // Button height in screen units
-    TextRenderer textRenderer;
     float getDeterministicRandomFloat(int value) {
         // Create a hash from the input value to use as the seed
         std::hash<int> hashFunction;
@@ -32,29 +36,54 @@ class Window {
     }
     int generation = 0;
     bool isShowSideBar = false;
+    void initializeUI()
+    {
+        // Initialize text renderer
+        HDC hdc = GetDC(glfwGetWin32Window(window)); // Get device context from GLFW
+
+        windowUI.uiRect = UIRect(Vector2(0, 0), Vector2(width, height), Vector2(), Vector2());
+        windowUI.textRenderer.initFont(hdc, 28);
+
+        gameCanvas.uiRect = UIRect(Vector2(0, 0), Vector2(0, 0), Vector2(0.2, 0), Vector2(1.0, 1.0), &windowUI.uiRect);
+        gameCanvas.uiRenderer.color = Color(0.0, 0.0, 0.0);
+        gameCanvas.textRenderer.initFont(hdc, 28);
+
+        sideBar.uiRect = UIRect(Vector2(0, 0), Vector2(0, 0), Vector2(0.0, 0.0), Vector2(0.2, 1.0), &windowUI.uiRect);
+        sideBar.uiRenderer.color = Color(0.2, 0.2, 0.2);
+        sideBar.textRenderer.initFont(hdc, 28);
+
+        button.uiRect = UIRect(Vector2(10, -5), Vector2(30, -20), Vector2(0.0, 1.0), Vector2(0.0, 1.0), &sideBar.uiRect);
+        button.uiRenderer.color = Color(0.9, 0.9, 0.2);
+        button.textRenderer.initFont(hdc, 10);
+
+        ReleaseDC(glfwGetWin32Window(window), hdc); // Release the device context
+    }
 public:
     GLFWwindow* window;
     int width, height;
+
+    Vector2 worldDimentionMin;
+    Vector2 worldDimentionMax;
+    Vector2 worldSize;
+
     float cellWidth, cellHeight;
     void setGeneration(int newGeneration)
     {
         generation = newGeneration;
     }
-    void showSideBar()
-    {
-        isShowSideBar = true;
-    }
-    void hideSideBar()
-    {
-        isShowSideBar = false;
-    }
-    Window(int w, int h, const char* title) {
+
+
+    Window(int w, int h, int Ww, int Wh, const char* title) {
+
         if (!glfwInit()) {
             fprintf(stderr, "Failed to initialize GLFW\n");
             exit(EXIT_FAILURE);
         }
-
-        window = glfwCreateWindow(w, h, title, NULL, NULL);
+        worldSize.x = w;
+        worldSize.y = h;
+        worldDimentionMax.x = w / 2;
+        worldDimentionMax.y = h/2;
+        window = glfwCreateWindow(Ww, Wh, title, NULL, NULL);
         if (!window) {
             fprintf(stderr, "Failed to open GLFW window\n");
             glfwTerminate();
@@ -74,10 +103,9 @@ public:
         glOrtho(0.0, WIDTH, 0.0, HEIGHT, -1.0, 1.0);
         glMatrixMode(GL_MODELVIEW);
 
-        // Initialize text renderer
-        HDC hdc = GetDC(glfwGetWin32Window(window)); // Get device context from GLFW
-        textRenderer.initFont(hdc);
-        ReleaseDC(glfwGetWin32Window(window), hdc); // Release the device context
+        
+        initializeUI();
+
     }
 
     ~Window() {
@@ -100,39 +128,18 @@ public:
 
     void renderSidebar() {
         // Render sidebar background
-        glColor3f(0.2f, 0.2f, 0.2f); // Dark gray color
-        glBegin(GL_QUADS);
-        glVertex2f(0.0f, 0.0f);
-        //glVertex2f(SIDEBAR_WIDTH, 0.0f);
-        //glVertex2f(SIDEBAR_WIDTH, HEIGHT);
-        glVertex2f(WIDTH, 0.0f);
-        glVertex2f(WIDTH, HEIGHT);
-        glVertex2f(0.0f, HEIGHT);
-        glEnd();
-
-        // Render button
-        glColor3f(0.6f, 0.6f, 0.6f); // Light gray button
-        glBegin(GL_QUADS);
-        glVertex2f(10.0f, HEIGHT - 30.0f); // Top left
-        glVertex2f(SIDEBAR_WIDTH - 10.0f, HEIGHT - 30.0f); // Top right
-        glVertex2f(SIDEBAR_WIDTH - 10.0f, HEIGHT - 30.0f - BUTTON_HEIGHT); // Bottom right
-        glVertex2f(10.0f, HEIGHT - 30.0f - BUTTON_HEIGHT); // Bottom left
-        glEnd();
-
-        // Render labels
-        textRenderer.renderText(10.0f, HEIGHT - 60.0f, "Generation: " + std::to_string(generation));
-        textRenderer.renderText(10.0f, HEIGHT - 80.0f, "Label 2");
-        textRenderer.renderText(10.0f, HEIGHT - 100.0f, "Label 3");
+        sideBar.uiRenderer.render();
+        button.uiRenderer.render("Generation: " + std::to_string(generation));
         glFlush();
-
     }
 
     void renderGrid(Cell* grid) {
         glClear(GL_COLOR_BUFFER_BIT);
         glBegin(GL_QUADS);
 
-        for (int y = 0; y < HEIGHT; y++) {
-            for (int x = 0; x < WIDTH; x++) {
+        for (int y = worldDimentionMin.y; y < worldDimentionMax.y && y < worldSize.y; y++) {
+            for (int x = worldDimentionMin.x; x < worldDimentionMax.x && x < worldSize.x; x++) {
+
                 int idx = y * WIDTH + x;
                 float r = grid[idx].energy > 0 ? grid[idx].energy / float(REP_ENERGY) : 0.0f; // Alive cells are white, dead cells are black
                 float g = 0;
@@ -148,10 +155,16 @@ public:
                }
                 
                 glColor3f(r, g, b);
-                glVertex2f((float)x, (float)y); // Bottom left
-                glVertex2f((float)(x + 1), (float)y); // Bottom right
-                glVertex2f((float)(x + 1), (float)(y + 1)); // Top right
-                glVertex2f((float)x, (float)(y + 1)); // Top left
+                Vector2 scale = worldDimentionMax - worldDimentionMin;
+                Vector2 cellMin(x * gameCanvas.uiRect.getDimentions().x / scale.x + gameCanvas.uiRect.getGlobalPosMin().x,
+                    y * gameCanvas.uiRect.getDimentions().y / scale.y + gameCanvas.uiRect.getGlobalPosMin().y);
+                Vector2 cellMax((x + 1) * gameCanvas.uiRect.getDimentions().x / scale.x + gameCanvas.uiRect.getGlobalPosMin().x,
+                    (y + 1) * gameCanvas.uiRect.getDimentions().y / scale.y + gameCanvas.uiRect.getGlobalPosMin().y);
+
+                glVertex2f(cellMin.x, cellMin.y); // Bottom left
+                glVertex2f(cellMax.x, cellMin.y); // Bottom right
+                glVertex2f(cellMax.x, cellMax.y); // Top right
+                glVertex2f(cellMin.x, cellMax.y); // Top left
             }
         }
 
